@@ -37,6 +37,29 @@ def contrastive_loss_fn(n_source, tau):
     
     return loss
 
+def contrastive_loss_multiclass(proj, y, tau=1.):
+    """
+    
+    """
+    n_class = len(torch.unique(y))
+    C = proj @ proj.t() / tau
+    cost = 0.
+    for i in range(n_class):
+        len_i = (y == i).sum()
+        if len_i == 0:
+            continue
+        interclass = C[y == i, :][:, y != i] # shape = [len_i, batch - len(i)]
+        intraclass = C[y == i, :][:, y == i] # shape [len_i , len_i]
+        interclass_xp = expand_newdim(interclass, len_i, 1) # [len_i, len_i, batch - len(i)]
+        intraclass_xp = intraclass.unsqueeze(-1) # [len_i, len_i, 1]
+
+        denom = torch.cat((interclass_xp, intraclass_xp), dim=-1) # [len_i, len_i, batch - len(i) + 1]
+        log_denom = torch.logsumexp(denom, dim=-1, keepdim=False) # [len_i, len_i]
+        class_cost = -1. * (intraclass - log_denom).sum()
+        cost += class_cost / len_i ** 2
+        
+    return cost / n_class
+
 def contrastive_loss_C(C, N, k):
     """
     given matrix C of positive/negative (k negatives each row), derive contrastive loss
