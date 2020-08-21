@@ -16,18 +16,14 @@ def normal_sample(mu, var, device):
     return mu + torch.randn(mu.shape).to(device) * var.sqrt()
 
 
-def interpolate(p1, p2, n_pts=100):
-    alpha = np.linspace(0.0, 1.0, n_pts, endpoint=True,)[:,None]
-    delta = p2 - p1
-    deltas = np.tile(delta, (n_pts, 1))
-    interms = p1 + alpha * deltas
-    return interms
+# def interpolate(p1, p2, n_pts=100):
+#     alpha = torch.linspace(0.0, 1.0, n_pts, endpoint=True)[:,None]
+#     delta = p2 - p1
+#     deltas = np.tile(delta, (n_pts, 1))
+#     interpols = p1 + alpha * deltas
+#     return interpols
 
-# def square_interpolate(p1, p2, p3, nrow=10):
-#     """
-#     Given 3 points, return points in a square grid evenly spaced by 10
-#     """
-    
+
 def equi_points_2d(n_points=100,
                     center=0.0,
                     size=1.0):
@@ -42,8 +38,9 @@ def equi_points_2d(n_points=100,
 
     return pts
 
+
 def log_sum_exp(tensor, dim=-1, detach=True):
-    """
+    """ Consider using torch logsumexp
     :arg detach: if used to compute gradient, must use detach
     """
     max_el = torch.max(tensor, dim=dim, keepdim=True)[0]
@@ -53,9 +50,11 @@ def log_sum_exp(tensor, dim=-1, detach=True):
     log_sum_exp = tensor.exp().sum(dim=dim, keepdim=True).log()
     return max_el + log_sum_exp
 
+
 def log_mean_exp(tensor, dim, detach=True):
     num_el = tensor.shape[-1]
     return log_sum_exp(tensor, dim, detach) - np.log(num_el)
+    
     
 def log_prob_normal(x, mu, var=None):
     """
@@ -70,6 +69,7 @@ def log_prob_normal(x, mu, var=None):
         norm_term = 0.5 * np.log(2*np.pi) * x.shape[-1] + 0.5 * torch.sum(torch.log(var), dim=-1, keepdim=True)
 
     return - exp_term - norm_term
+
 
 
 def product_of_diag_normals(mus: typing.List, vars: typing.List):
@@ -92,10 +92,12 @@ def product_of_diag_normals(mus: typing.List, vars: typing.List):
     mu = mu * var
     return mu, var
 
+
 def log_prob_bernoulli(input_logits, target):
     logpdf = -1 * F.binary_cross_entropy_with_logits(input_logits, target, reduction='none')
     logpdf = logpdf.sum(dim=-1, keepdim=True)
     return logpdf
+
 
 def log_prob_softmax(input_logits, target):
     # cross_entropy classes are in 2nd dimension. TODO
@@ -107,8 +109,10 @@ def log_prob_softmax(input_logits, target):
     logpdf = logpdf.view(original_shape)
     return logpdf
 
+
 def log_normal_prior(z):
     return log_prob_normal(z, 0)
+
 
 def get_importance_bound(elbos):
     with torch.no_grad():
@@ -120,14 +124,17 @@ def get_importance_bound(elbos):
     weighted_elbos = weights * elbos
     return weighted_elbos
 
+
 def norm2(X, sq=True):
     if sq:
         return torch.sum(X**2, dim=-1)
     else:
         return torch.sum(X**2, dim=-1).sqrt()
 
+    
 def norm1(X):
     return torch.sum(torch.abs(X))
+
 
 def get_entropy(P):
     return -1 * torch.sum(P * torch.log(P) - P)

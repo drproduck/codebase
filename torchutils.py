@@ -3,13 +3,32 @@ from torch import nn
 from codebase.mathutils import *
 import torch.nn.functional as F
 import typing
+import gc, sys, os, psutil
 
         
-def init_weights(m):
-    if type(m) == nn.Linear:
-        torch.nn.init.xavier_uniform_(m.weight)
-        m.bias.data.fill_(0)
-
+def weights_init(net):
+    for m in net.modules():
+        if isinstance(m, nn.ConvTranspose2d):
+            m.weight.data.normal_(0, 0.02)
+            if m.bias is not None:
+                m.bias.data.fill_(0)
+        if isinstance(m, nn.Conv2d):
+            m.weight.data.normal_(0, 0.02)
+            if m.bias is not None:
+                m.bias.data.fill_(0)
+        elif isinstance(m, nn.Linear):
+            torch.nn.init.xavier_uniform_(m.weight)
+            # m.weight.data.normal_(0, 0.02)
+            if m.bias is not None:
+                m.bias.data.fill_(0)
+        elif isinstance(m, nn.BatchNorm2d):
+            m.weight.data.normal_(1.0, 0.02)
+            if m.bias is not None:
+                m.bias.data.fill_(0)
+        elif isinstance(m, nn.BatchNorm1d):
+            m.weight.data.normal_(1.0, 0.02)
+            if m.bias is not None:
+                m.bias.data.fill_(0)
         
 def is_nan(tensor):
     if torch.sum(torch.isnan(tensor)) > 0:
@@ -87,3 +106,114 @@ class ModuleWrapper(nn.Module):
         
 def gettensorinfo(tensor):
     print(tensor.shape, tensor.dtype, tensor.device)
+    
+    
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+def get_params(*modules):
+    params = []
+    for module in modules:
+        params += list(module.parameters())
+        
+    return params
+
+
+def to_evals(*modules):
+    for module in modules:
+        module.eval()
+    
+
+def to_trains(*modules):
+    for module in modules:
+        module.train()
+        
+        
+def tensor2img(x):
+    """for pixels in [0, 1]
+    """
+    return x.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).type(torch.uint8)
+
+
+def random_seed(seed):
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    
+    
+def save_models(dir, epoch, prefix=None, postfix=None, **kwargs):
+    """
+    Save a model to a dir
+    :param epoch: epoch number
+    :param kwargs: model name to model
+    :return:
+    """
+    # Save model checkpoints
+    if prefix is None: prefix = ''
+    if postfix is None: postfix = ''
+    for name, model in kwargs.items():
+        fname = f"{prefix}_{name}_{epoch:02d}_{postfix}"
+        fname += ".pth"
+        torch.save(model.state_dict(), os.path.join(dir, fname))
+        
+        
+def inf_generator(iterable):
+    """Allows training with DataLoaders in a single infinite loop:
+        for i, (x, y) in enumerate(inf_generator(train_loader)):
+    """
+    iterator = iterable.__iter__()
+    while True:
+        try:
+            yield iterator.__next__()
+        except StopIteration:
+            iterator = iterable.__iter__()        
+            
+            
+def memReport():
+    for obj in gc.get_objects():
+        if torch.is_tensor(obj):
+            print(type(obj), obj.size())
+            
+
+def cpuStats():
+    print(sys.version)
+    print(psutil.cpu_percent())
+    print(psutil.virtual_memory())  # physical memory usage
+    pid = os.getpid()
+    py = psutil.Process(pid)
+    memoryUse = py.memory_info()[0] / 2. ** 30  # memory use in GB...I think
+    print('memory GB:', memoryUse)
+    
+    
+def interpolate(p1, p2, n_pts=100):
+    """p1, p2 shape = [batch, dim]
+    """
+    alpha = torch.linspace(0.0, 1.0, n_pts).reshape(1, 1, -1).to(p1)
+    delta = p2 - p1
+    interpols = p1.unsqueeze(-1) + alpha * delta.unsqueeze(-1)
+    return interpols
+
+
+def to_tensor(x):
+    return torch.from_numpy(x).type(torch.float32).cuda()
+
+
+def to_numpy(x):
+    if isinstance(x, torch.Tensor):
+        return x.detach().cpu().numpy()
+    return x
+
+
+class Logger():
+    def __init__(self, **kwargs):
+        self.dict = kwargs
+        
+    def peek(self, arg):
+        return self.dict[arg][-1]
+    
+    def put(self, arg, val):
+        return self.dict[arg].append(val)
+    
+    def summarize(self, iteration):
+        print(f"Iter {iteration}, " + "".join(f"{key}: {value[-1]:.4f}, " for key, value in self.dict.items()))

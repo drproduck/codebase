@@ -5,7 +5,7 @@ import math
 from PIL import Image
 import os
 import numpy as np
-from codebase.mathutils import equi_points_2d
+import gc, sys, os, psutil
 
 
 class DictObject(object):
@@ -14,107 +14,54 @@ class DictObject(object):
             setattr(self, k, w)
 
 
-def save_models(dir, epoch, prefix=None, postfix=None, **kwargs):
-    """
-    Save a model to a dir
-    :param epoch: epoch number
-    :param kwargs: model name to model
-    :return:
-    """
-    # Save model checkpoints
-    if prefix is None: prefix = ''
-    if postfix is None: postfix = ''
-    for name, model in kwargs.items():
-        fname = f"{prefix}_{name}_{epoch:02d}_{postfix}"
-        fname += ".pth"
-        torch.save(model.state_dict(), os.path.join(dir, fname))
+def makedirs(dirname):
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+        
+        
+class ExponentialMovingAverage(object):
+    """code taken from rtqchen residual flow"""
+    def __init__(self, module, decay=0.999):
+        """Initializes the model when .apply() is called the first time.
+        This is to take into account data-dependent initialization that occurs in the first iteration."""
+        self.module = module
+        self.decay = decay
+        self.shadow_params = {}
+        self.nparams = sum(p.numel() for p in module.parameters())
 
-def sample_images(dir, generator, noise, epoch, batches_done, 
-        nrow=10, 
-        num_images=100, 
-        padding=2,
-        pad_value=0,
-        writer=None,
-        ):
-    """
-    Saves a generated sample from the validation set
-    Code taken from torchvision
+    def init(self):
+        for name, param in self.module.named_parameters():
+            self.shadow_params[name] = param.data.clone()
 
-    """
+    def apply(self):
+        if len(self.shadow_params) == 0:
+            self.init()
+        else:
+            with torch.no_grad():
+                for name, param in self.module.named_parameters():
+                    self.shadow_params[name] -= (1 - self.decay) * (self.shadow_params[name] - param.data)
 
-    samples = torch.sigmoid(generator(noise))[:num_images]
-    samples = samples.view(-1, 28, 28)
+    def set(self, other_ema):
+        self.init()
+        with torch.no_grad():
+            for name, param in other_ema.shadow_params.items():
+                self.shadow_params[name].copy_(param)
+
+    def replace_with_ema(self):
+        for name, param in self.module.named_parameters():
+            param.data.copy_(self.shadow_params[name])
+
+    def swap(self):
+        for name, param in self.module.named_parameters():
+            tmp = self.shadow_params[name].clone()
+            self.shadow_params[name].copy_(param.data)
+            param.data.copy_(tmp)
+
+    def __repr__(self):
+        return (
+            '{}(decay={}, module={}, nparams={})'.format(
+                self.__class__.__name__, self.decay, self.module.__class__.__name__, self.nparams
+            )
+        )    
     
-    nmaps = samples.size(0)
-    xmaps = min(nrow, nmaps)
-    ymaps = int(math.ceil(float(nmaps) / xmaps))
-    height, width = int(samples.size(1) + padding), int(samples.size(2) + padding)
-    grid = samples.new_full((height * ymaps + padding, width * xmaps + padding), pad_value)
-    k = 0
-    for y in range(ymaps):
-        for x in range(xmaps):
-            if k >= nmaps:
-                break
-            grid.narrow(0, y * height + padding, height - padding)\
-                .narrow(1, x * width + padding, width - padding)\
-                .copy_(samples[k])
-            k = k + 1
-
-    grid = grid.mul_(255).add_(0.5).clamp_(0, 255).to('cpu', torch.uint8)
-    image = Image.fromarray(grid.numpy())
-    if writer is None:
-        image.save(os.path.join(dir, f"{epoch:02d}_{batches_done:05d}.png"))
-    else:
-        if len(grid.shape) == 2:
-            repeat_newdim(grid, 1, 0)
-        writer.add_image('images', grid, global_step=epoch)
-
-
-
-def sample_2d_grid(dir, generator, epoch, batches_done, 
-                    n_points = 20,
-                    center=0.0,
-                    size=1.0,
-                    padding=2, 
-                    pad_value=0,
-                    writer=None,
-                    ):
-    """
-    Save samples from an equally distributed latent points in a 2d square grid
-    :arg nrow: number of interpolated points along each dimension
-    :arg center: center of the square grid
-    :arg size: size of the square grid
-    """
-    pts = equi_points_2d(n_points, center, size)    
-    pts = torch.Tensor(pts).cuda()
-    samples = torch.sigmoid(generator(pts))
-    samples = samples.view(-1, 28, 28)
-    
-    nmaps = samples.size(0)
-    xmaps = min(n_points, nmaps)
-    ymaps = int(math.ceil(float(nmaps) / xmaps))
-    height, width = int(samples.size(1) + padding), int(samples.size(2) + padding)
-    grid = samples.new_full((height * ymaps + padding, width * xmaps + padding), pad_value)
-    k = 0
-    for y in range(ymaps):
-        for x in range(xmaps):
-            if k >= nmaps:
-                break
-            grid.narrow(0, y * height + padding, height - padding)\
-                .narrow(1, x * width + padding, width - padding)\
-                .copy_(samples[k])
-            k = k + 1
-
-    grid = grid.mul_(255).add_(0.5).clamp_(0, 255).to('cpu', torch.uint8) 
-    image = Image.fromarray(grid.numpy())
-    if writer is None:
-        image.save(os.path.join(dir, f"{epoch:02d}_{batches_done:05d}.png"))
-    else:
-        if len(grid.shape) == 2:
-            grid = repeat_newdim(grid, 1, 0)
-        writer.add('sample_grid', repeat_newdim(grid, 1, 0), global_step=epoch)
-
-
-if __name__ == '__main__':
-    pts = equi_points_2d(n_points=3)
-    print(pts)
+        
