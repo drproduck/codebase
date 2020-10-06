@@ -4,6 +4,9 @@ from codebase.mathutils import *
 import torch.nn.functional as F
 import typing
 import gc, sys, os, psutil
+import PIL
+from torchvision.transforms import ToTensor
+import io
 
         
 def weights_init(net):
@@ -217,3 +220,15 @@ class Logger():
     
     def summarize(self, iteration):
         print(f"Iter {iteration}, " + "".join(f"{key}: {value[-1]:.4f}, " for key, value in self.dict.items()))
+        
+        
+        
+def plt2img(fig):
+    """Create a pyplot plot and save to buffer."""
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png')
+    buf.seek(0)
+    
+    image = PIL.Image.open(buf)
+    image = ToTensor()(image)
+    return image
