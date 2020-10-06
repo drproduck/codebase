@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from codebase.mathutils import *
+from mathutils import *
 import torch.nn.functional as F
 import typing
 import gc, sys, os, psutil

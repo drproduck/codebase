@@ -1,5 +1,5 @@
 import torch
-from codebase.torchutils import *
+from torchutils import *
 from torch.nn.functional import softplus
 from functools import partial
 
