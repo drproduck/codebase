@@ -1,6 +1,6 @@
 import torch
 from time import time
-from distance import batch_eudist_sq
+from codebase.distance import batch_eudist_sq
 import pdb
 
 
@@ -8,7 +8,6 @@ import pdb
 
 # main funcs
 def get_S(C, u, v, eta):
-    n, m = C.shape
     K = - C + u + v.T
     return torch.exp(K / eta)
 
@@ -24,20 +23,30 @@ def onesided_sinkhorn_uot(C, r, c, eta=0.1, t=10.0, n_iter=100):
     :arg t2: Kl regularizer
     :n_iter: number of Sinkhorn iterations
     """
-    # initial solution
-    u = torch.zeros_like(r)
-    v = torch.zeros_like(c)
 
-    for i in range(n_iter):
-        S = get_S(C, u, v, eta)
-        a = S.sum(dim=1).reshape(-1, 1)
-        u = (u / eta + torch.log(r) - torch.log(a)) * eta
+    with torch.no_grad():
+        log_r = torch.log(r + 1e-16)
+        log_c = torch.log(c + 1e-16)
+    
+        # initial solution
+        u = torch.zeros_like(r)
+        v = torch.zeros_like(c)
+    
+        for i in range(n_iter):
+#             S = get_S(C, u, v, eta)
+#             b = S.sum(dim=0).reshape(-1, 1)
+            K = - C + u + v.T
+            log_b = torch.logsumexp(K.t() / eta, dim=-1, keepdim=True)
+            v = (v / eta + log_c - log_b) * (t * eta / (eta + t))
 
-        S = get_S(C, u, v, eta)
-        b = S.sum(dim=0).reshape(-1, 1)
-        v = (v / eta + torch.log(c) - torch.log(b)) * (t * eta / (eta + t))
+            # we end the loop with update of a so that row sum constraint is satisfied.
+#             S = get_S(C, u, v, eta)
+#             a = S.sum(dim=1).reshape(-1, 1)
+            K = - C + u + v.T
+            log_a = torch.logsumexp(K / eta, dim=-1, keepdim=True)
+            u = (u / eta + log_r - log_a) * eta
 
-    S = get_S(C, u, v, eta)
+        S = get_S(C, u, v, eta), u, v
 
     return S
 
