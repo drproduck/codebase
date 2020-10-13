@@ -30,3 +30,31 @@ class RevGrad(Module):
 
     def forward(self, input_):
         return revgrad(input_)
+    
+
+class NecroReLUFn(Function):
+    """ 
+    A function that outputs like a ReLU (x for x >= 0 or 0 otherwise) 
+    but has gradient of an identity function (1)
+    """
+    @staticmethod
+    def forward(ctx, input_):
+        input_[input_ < 0] = 0
+        return input_
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output
+    
+necro_relu = NecroReLUFn.apply
+
+class NecroReLU(Module):
+    def __init__(self, *args, **kwargs):
+        """ 
+        A function that outputs like a ReLU (x for x >= 0 or 0 otherwise) 
+        but has gradient of an identity function (1)
+        """
+        super().__init__(*args, **kwargs)
+
+    def forward(self, input_):
+        return necro_relu(input_)

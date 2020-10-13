@@ -12,7 +12,7 @@ def get_S(C, u, v, eta):
     return torch.exp(K / eta)
 
 
-def onesided_sinkhorn_uot(C, r, c, eta=0.1, t=10.0, n_iter=100):
+def onesided_sinkhorn_uot(C, r, c, eta=0.1, tau=10., n_iter=100):
     """
     \min_{X, X1 = a} <C, X> + \tau KL(X^T 1, b) - H(X)
     
@@ -37,7 +37,7 @@ def onesided_sinkhorn_uot(C, r, c, eta=0.1, t=10.0, n_iter=100):
 #             b = S.sum(dim=0).reshape(-1, 1)
             K = - C + u + v.T
             log_b = torch.logsumexp(K.t() / eta, dim=-1, keepdim=True)
-            v = (v / eta + log_c - log_b) * (t * eta / (eta + t))
+            v = (v / eta + log_c - log_b) * (tau * eta / (eta + tau))
 
             # we end the loop with update of a so that row sum constraint is satisfied.
 #             S = get_S(C, u, v, eta)
